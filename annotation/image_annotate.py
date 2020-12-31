@@ -13,46 +13,32 @@ from matplotlib.patches import Rectangle
 from scipy.io.matlab.mio import loadmat
 
 
-help_msg = '''Mouse commands:
-  left click:    define new ROI point, drag for free-hand drawing, 
-                 select/deselect existing ROI
-                 
-  right click:   close current ROI polygon, delete existing ROI
-    
-Keyboard commands:
-  h: print this help message
-  e: export rois
+help_msg = '''Mouse:
+left click:  define a new point, select/deselect existing point
+right click: close current polygon, delete existing point
+
+Keyboard:
+  h: help message
+  e: export file
   m: export mean image
-  a: annotate ROIs
-  d: delete last ROI
-  g: group selected ROIs
-  u: ungroup selected ROIs
-  j: join unlabeled ROIs to labeled ROI group
-  c: clear all unlabeled ROIs
+  a: annotate point
+  d: delete last point
+  g: group selected point
+  u: ungroup selected point
+  j: join unlabeled points to labeled points group
+  c: clear all unlabeled points
   =: grow zoom window 
   -: shrink zoom window
-  q: quit (and export if ROIs changed since startup)
+  q: quit
 '''
 
 usage_msg = '''Usage:
-python image_annotate.py [options] [image_file]
+python image_annotate.py [image_file]
 
 [image_file] can be:
   - [filename].[ext]:     any image readable by matplotlib.imread
   - [filename].[img|hdr]: an ENVI image
-  - [filename].mat:[var]: a Matlab .mat file containing variable [var]
-  
-options:
-  -h  --help         print this usage and exit
-  -r  --ref          reference image file 
-  -b  --bands        indices of reference bands (either 1 or 3 comma-delimted values, default=[0])
-  -w  --wvl          wavelength file
-  -l  --load-rois    load ROIs from file
-  -c  --color        color file (default=cm_jet16.txt)
-  -n  --norm         L2 normalize each pixel in image_file
-  -s  --scale        scaling factor for reference image values (default=1.0)
-  -f  --flip         flip data up/down w.r.t. reference file
-  -v  --verbose      enable verbose output'''
+  - [filename].mat:[var]: a Matlab .mat file containing variable [var]'''
 
 
 def load_matlab(filename, keys):
@@ -60,7 +46,6 @@ def load_matlab(filename, keys):
     dat = []
     if type(keys) == str:
         keys = [keys]
-    print([k for k in mat.keys()])
     for key in keys:
         if key not in mat:
             print('%s not present in %s, skipping.' % (key, filename))
@@ -73,7 +58,7 @@ def load_matlab(filename, keys):
     return dat
 
 
-class ROI:
+class Point:
     def __init__(self, id, verts, label=' ', group=0):
         self.id = id
         self.group = group
@@ -81,13 +66,13 @@ class ROI:
         self.label = label
         self.nverts = len(verts)
         self.selected = False
-        self.updateXY()
+        self.update_x_y()
 
     def __getitem__(self, i):
         return self.verts[i]
 
     def __str__(self):
-        return 'ROI %d label="%s" group=%d' % (self.id, self.label, self.group)
+        return 'Point %d label="%s" group=%d' % (self.id, self.label, self.group)
 
     def __len__(self):
         return self.nverts
@@ -95,7 +80,7 @@ class ROI:
     def __iter__(self):
         return iter(self.verts)
 
-    def updateXY(self):
+    def update_x_y(self):
         self.x = [v[0] for v in self.verts]
         self.y = [v[1] for v in self.verts]
 
@@ -112,12 +97,12 @@ class ROI:
         for i in range(len(self)):
             self.verts[i][0] += dx
             self.verts[i][1] += dy
-        self.updateXY()
+        self.update_x_y()
 
 
-class LABELER:
+class Label:
     def __init__(self, img, ref, wvl=None, colortab=None,
-                 roifile='rois.mat', verbose=False):
+                 roifile='rois.mat'):
 
         self.img = img
         self.ref = ref
@@ -139,12 +124,10 @@ class LABELER:
         self.wvlmin = min(self.wvl)
         self.wvlmax = max(self.wvl)
 
-        self.imgmin = 0.0  # np.min(self.img)
-        self.imgmax = -1.0  # np.max(self.img)
+        self.imgmin = 0.0
+        self.imgmax = -1.0
 
-        if colortab is None:  # pick colors randomly
-            if verbose:
-                print("Using default (16-color) colortable")
+        if colortab is None:
             colortab = [pl.cm.hsv(i/16.0) for i in range(16)]
 
         ncolors = len(colortab)
@@ -153,10 +136,6 @@ class LABELER:
         self.yinch = 11
         self.dpi = self.img.shape[0]/self.yinch
         self.xinch = self.img.shape[1]/float(self.dpi)
-
-        if verbose:
-            print("xinch=%f, yinch=%f, dpi=%f" %
-                  (self.xinch, self.yinch, self.dpi))
 
         self.zoomsz = 30
         self.mboxidx = -1
@@ -360,7 +339,7 @@ class LABELER:
             group = groups[i]
             if len(label) > 1:
                 label = label.strip()
-            roi = ROI(id, verts[i], label=label, group=group)
+            roi = Point(id, verts[i], label=label, group=group)
             self.rois.append(roi)
         print('Finished restoring rois')
 
@@ -445,7 +424,7 @@ class LABELER:
         for i, roi in enumerate(self.rois):
             if roi.group == 0:
                 toclear.append(i)
-        for idx in toclear[::-1]:  # delete from the end first
+        for idx in toclear[::-1]:
             del self.rois[idx]
 
     def group_selected(self):
@@ -481,7 +460,7 @@ class LABELER:
     def button_press_callback(self, event):
         if event.inaxes:
             x, y = event.xdata, event.ydata
-            if event.button == 1:  # left button
+            if event.button == 1:
                 inside = self.inside_rois(x, y)
                 if inside:
                     idx = max(inside)
@@ -490,37 +469,34 @@ class LABELER:
                     self.previous_point = [x, y]
                 else:
                     self.points.append([x, y])
-                    if self.line == None:  # if there is no line, create a line
+                    if self.line == None:
                         self.line = pl.Line2D([x, x], [y, y], marker='o')
                         self.start_point = [x, y]
                         self.previous_point = self.start_point
                         self.imax.add_line(self.line)
-                    else:  # if there is a line, create a segment
+                    else:
                         self.line = pl.Line2D([self.previous_point[0], x],
                                               [self.previous_point[1], y], marker='o')
 
                         self.previous_point = [x, y]
                         self.imax.add_line(self.line)
 
-            elif event.button == 3:  # right button
+            elif event.button == 3:
                 if self.line != None:
                     if len(self.points) > 2:
-                        # close the polygon loop
                         self.line.set_data([self.previous_point[0], self.start_point[0]],
                                            [self.previous_point[1], self.start_point[1]])
                         self.imax.add_line(self.line)
 
-                        roi = ROI(self.new_id(), self.points)
+                        roi = Point(self.new_id(), self.points)
                         self.rois.append(roi)
                         self.exported = False
 
-                    # clear points
                     self.points = []
                     self.line = None
                     self.draw_rois()
 
                 elif self.line is None:
-                    # delete the top roi
                     inside = self.inside_rois(x, y)
                     if inside:
                         del self.rois[max(inside)]
@@ -603,11 +579,11 @@ def main(argv=None):
             self.msg = usage_msg
 
     if argv is None:
-        # argv = sys.argv
-        argv=['./image_annotate.py', './test.jpg']
+        argv = sys.argv
+        # argv = ['./image_annotate.py', './test.jpg']
     try:
         try:
-            longopts = ['verbose', 'flip', 'norm', 'help']
+            longopts = ['flip', 'norm', 'help']
             longoptsp = ['dat', 'ref', 'bands',
                          'matkey', 'load-rois', 'scale', 'wvl']
             shortopts = ''.join([o[0] for o in longopts])
@@ -618,7 +594,6 @@ def main(argv=None):
         except (getopt.error, IndexError) as msg:
             raise usage(msg)
 
-        verbose = False
         flipdat = False
         norm = False
         refbands = [0, 1, 2]
@@ -627,9 +602,7 @@ def main(argv=None):
         reff, refkey = None, None
         colorf, roif = None, None
         for opt, val in opts:
-            if opt in ('--verbose', '-v'):
-                verbose = True
-            elif opt in ('--help', '-h'):
+            if opt in ('--help', '-h'):
                 print(__doc__)
                 print(usage_msg)
                 sys.exit(0)
@@ -694,10 +667,6 @@ def main(argv=None):
 
         x, y, z = np.atleast_3d(dat).shape
 
-        if verbose:
-            print("Loaded %d x %d x %d image data from file %s" %
-                  (x, y, z, datf))
-
         if norm and not pathexists(normf):
             from scipy.io import savemat
             print("Saving normalized data to file %s" % normf)
@@ -727,10 +696,6 @@ def main(argv=None):
             reftype = ref.dtype
             ref = (ref.astype(float)*scalec).astype(reftype)
 
-        if verbose:
-            print("Reference image bands=%s, scaling factor=%f" %
-                  (refbands, scalec))
-
         if wvlf is None:
             wvl = np.arange(dat.shape[2])
         else:
@@ -744,8 +709,7 @@ def main(argv=None):
         if roif is None:
             roif = dfile+'_rois.mat'
 
-        lab = LABELER(dat, ref, wvl=wvl, colortab=colortab, roifile=roif,
-                      verbose=verbose)
+        lab = Label(dat, ref, wvl=wvl, colortab=colortab, roifile=roif)
 
         pl.ioff()
         pl.show()
@@ -756,9 +720,4 @@ def main(argv=None):
 
 
 if __name__ == '__main__':
-    try:
-        # import psyco
-        # psyco.full()
-        pass
-    finally:
-        sys.exit(main())
+    sys.exit(main())

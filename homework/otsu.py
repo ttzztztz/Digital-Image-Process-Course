@@ -6,29 +6,25 @@ from matplotlib import pyplot as plt
 
 def otsu(gray):
     pixel_number = gray.shape[0] * gray.shape[1]
-    mean_weigth = 1.0/pixel_number
+    mean_weight = 1.0/pixel_number
     his, bins = np.histogram(gray, np.array(range(0, 256)))
-    final_thresh = -1
+    final_threshold = -1
     final_value = -1
     for t in bins[1:-1]:
-        Wb = np.sum(his[:t]) * mean_weigth
-        Wf = np.sum(his[t:]) * mean_weigth
+        wb = np.sum(his[:t]) * mean_weight
+        wf = np.sum(his[t:]) * mean_weight
 
         mub = np.mean(his[:t])
         muf = np.mean(his[t:])
 
-        value = Wb * Wf * (mub - muf) ** 2
-
-        print("Wb", Wb, "Wf", Wf)
-        print("t", t, "value", value)
-
+        value = wb * wf * (mub - muf) ** 2
         if value > final_value:
-            final_thresh = t
+            final_threshold = t
             final_value = value
     final_img = gray.copy()
-    print(final_thresh)
-    final_img[gray > final_thresh] = 255
-    final_img[gray < final_thresh] = 0
+    print(final_threshold)
+    final_img[gray > final_threshold] = 255
+    final_img[gray < final_threshold] = 0
     return final_img
 
 
